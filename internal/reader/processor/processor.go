@@ -52,6 +52,7 @@ func ProcessFeedEntries(store *storage.Storage, feed *model.Feed, user *model.Us
 		}
 
 		websiteURL := getUrlFromEntry(feed, entry)
+		entry.URL = websiteURL
 		entryIsNew := !store.EntryURLExists(feed.ID, entry.URL)
 		if feed.Crawler && (entryIsNew || forceRefresh) {
 			slog.Debug("Scraping entry",
@@ -164,7 +165,7 @@ func matchField(pattern, value string) bool {
 func ProcessEntryWebPage(feed *model.Feed, entry *model.Entry, user *model.User) error {
 	startTime := time.Now()
 	websiteURL := getUrlFromEntry(feed, entry)
-
+	entry.URL = websiteURL
 	requestBuilder := fetcher.NewRequestBuilder()
 	requestBuilder.WithUserAgent(feed.UserAgent, config.Opts.HTTPClientUserAgent())
 	requestBuilder.WithCookie(feed.Cookie)
