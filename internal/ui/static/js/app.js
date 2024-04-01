@@ -167,6 +167,14 @@ function handleEntryStatus(item, element, setToRead) {
     }
 }
 
+// Add an icon-label span element.
+function appendIconLabel(element, labelTextContent) {
+    const span = document.createElement('span');
+    span.classList.add('icon-label');
+    span.textContent = labelTextContent;
+    element.appendChild(span);
+}
+
 // Change the entry status to the opposite value.
 function toggleEntryStatus(element, toasting) {
     const entryID = parseInt(element.dataset.id, 10);
@@ -193,7 +201,8 @@ function toggleEntryStatus(element, toasting) {
             }
         }
 
-        link.innerHTML = iconElement.innerHTML + '<span class="icon-label">' + label + '</span>';
+        link.replaceChildren(iconElement.content.cloneNode(true));
+        appendIconLabel(link, label);
         link.dataset.value = newStatus;
 
         if (element.classList.contains("item-status-" + currentStatus)) {
@@ -258,11 +267,13 @@ function saveEntry(element, toasting) {
         return;
     }
 
-    element.innerHTML = '<span class="icon-label">' + element.dataset.labelLoading + '</span>';
+    element.textContent = "";
+    appendIconLabel(element, element.dataset.labelLoading);
 
     const request = new RequestBuilder(element.dataset.saveUrl);
     request.withCallback(() => {
-        element.innerHTML = '<span class="icon-label">' + element.dataset.labelDone + '</span>';
+        element.textContent = "";
+        appendIconLabel(element, element.dataset.labelDone);
         element.dataset.completed = true;
         if (toasting) {
             const iconElement = document.querySelector("template#icon-save");
@@ -283,35 +294,37 @@ function handleBookmark(element) {
 
 // Send the Ajax request and change the icon when bookmarking an entry.
 function toggleBookmark(parentElement, toasting) {
-    const element = parentElement.querySelector(":is(a, button)[data-toggle-bookmark]");
-    if (!element) {
+    const buttonElement = parentElement.querySelector(":is(a, button)[data-toggle-bookmark]");
+    if (!buttonElement) {
         return;
     }
 
-    element.innerHTML = '<span class="icon-label">' + element.dataset.labelLoading + '</span>';
+    buttonElement.textContent = "";
+    appendIconLabel(buttonElement, buttonElement.dataset.labelLoading);
 
-    const request = new RequestBuilder(element.dataset.bookmarkUrl);
+    const request = new RequestBuilder(buttonElement.dataset.bookmarkUrl);
     request.withCallback(() => {
-        const currentStarStatus = element.dataset.value;
+        const currentStarStatus = buttonElement.dataset.value;
         const newStarStatus = currentStarStatus === "star" ? "unstar" : "star";
 
         let iconElement, label;
         if (currentStarStatus === "star") {
             iconElement = document.querySelector("template#icon-star");
-            label = element.dataset.labelStar;
+            label = buttonElement.dataset.labelStar;
             if (toasting) {
-                showToast(element.dataset.toastUnstar, iconElement);
+                showToast(buttonElement.dataset.toastUnstar, iconElement);
             }
         } else {
             iconElement = document.querySelector("template#icon-unstar");
-            label = element.dataset.labelUnstar;
+            label = buttonElement.dataset.labelUnstar;
             if (toasting) {
-                showToast(element.dataset.toastStar, iconElement);
+                showToast(buttonElement.dataset.toastStar, iconElement);
             }
         }
 
-        element.innerHTML = iconElement.innerHTML + '<span class="icon-label">' + label + '</span>';
-        element.dataset.value = newStarStatus;
+        buttonElement.replaceChildren(iconElement.content.cloneNode(true));
+        appendIconLabel(buttonElement, label);
+        buttonElement.dataset.value = newStarStatus;
     });
     request.execute();
 }
@@ -322,25 +335,27 @@ function handleFetchOriginalContent() {
         return;
     }
 
-    const element = document.querySelector(":is(a, button)[data-fetch-content-entry]");
-    if (!element) {
+    const buttonElement = document.querySelector(":is(a, button)[data-fetch-content-entry]");
+    if (!buttonElement) {
         return;
     }
 
-    const previousElement = element.cloneNode(true);
-    element.innerHTML = '<span class="icon-label">' + element.dataset.labelLoading + '</span>';
+    const previousElement = buttonElement.cloneNode(true);
 
-    const request = new RequestBuilder(element.dataset.fetchContentUrl);
+    buttonElement.textContent = "";
+    appendIconLabel(buttonElement, buttonElement.dataset.labelLoading);
+
+    const request = new RequestBuilder(buttonElement.dataset.fetchContentUrl);
     request.withCallback((response) => {
-        element.textContent = '';
-        element.appendChild(previousElement);
+        buttonElement.textContent = '';
+        buttonElement.appendChild(previousElement);
 
         response.json().then((data) => {
             if (data.hasOwnProperty("content") && data.hasOwnProperty("reading_time")) {
-                document.querySelector(".entry-content").innerHTML = data.content;
+                document.querySelector(".entry-content").innerHTML = ttpolicy.createHTML(data.content);
                 const entryReadingtimeElement = document.querySelector(".entry-reading-time");
                 if (entryReadingtimeElement) {
-                    entryReadingtimeElement.innerHTML = data.reading_time;
+                    entryReadingtimeElement.textContent = data.reading_time;
                 }
             }
         });
@@ -429,17 +444,31 @@ function goToPage(page, fallbackSelf) {
     }
 }
 
-function goToPrevious() {
+/**
+ * 
+ * @param {(number|event)} offset - many items to jump for focus. 
+ */
+function goToPrevious(offset) {
+    if (offset instanceof KeyboardEvent) {
+        offset = -1;
+    }
     if (isListView()) {
-        goToListItem(-1);
+        goToListItem(offset);
     } else {
         goToPage("previous");
     }
 }
 
-function goToNext() {
+/**
+ * 
+ * @param {(number|event)} offset - How many items to jump for focus. 
+ */
+function goToNext(offset) {
+    if (offset instanceof KeyboardEvent) {
+        offset = 1;
+    }
     if (isListView()) {
-        goToListItem(1);
+        goToListItem(offset);
     } else {
         goToPage("next");
     }
@@ -467,6 +496,10 @@ function goToFeed() {
     }
 }
 
+// Sentinel values for specific list navigation
+const TOP = 9999;
+const BOTTOM = -9999;
+
 /**
  * @param {number} offset How many items to jump for focus.
  */
@@ -486,8 +519,15 @@ function goToListItem(offset) {
         if (items[i].classList.contains("current-item")) {
             items[i].classList.remove("current-item");
 
-            const index = (i + offset + items.length) % items.length;
-            const item = items[index];
+            // By default adjust selection by offset
+            let itemOffset = (i + offset + items.length) % items.length; 
+            // Allow jumping to top or bottom
+            if (offset == TOP) {
+                itemOffset = 0;
+            } else if (offset == BOTTOM) {
+                itemOffset = items.length - 1;
+            }
+            const item = items[itemOffset];
 
             item.classList.add("current-item");
             DomHelper.scrollPageTo(item);
@@ -520,7 +560,7 @@ function incrementUnreadCounter(n) {
 function updateUnreadCounterValue(callback) {
     document.querySelectorAll("span.unread-counter").forEach((element) => {
         const oldValue = parseInt(element.textContent, 10);
-        element.innerHTML = callback(oldValue);
+        element.textContent = callback(oldValue);
     });
 
     if (window.location.href.endsWith('/unread')) {
@@ -615,7 +655,8 @@ function showToast(label, iconElement) {
 
     const toastMsgElement = document.getElementById("toast-msg");
     if (toastMsgElement) {
-        toastMsgElement.innerHTML = iconElement.innerHTML + '<span class="icon-label">' + label + '</span>';
+        toastMsgElement.replaceChildren(iconElement.content.cloneNode(true));
+        appendIconLabel(toastMsgElement, label);
 
         const toastElementWrapper = document.getElementById("toast-wrapper");
         if (toastElementWrapper) {
